@@ -1,9 +1,10 @@
 # applysync
 AI-powered privacy-first job application tracker that automatically syncs Gmail application emails into a Kanban dashboard.
 
-Current scope: Build 1, task 1 (local PostgreSQL persistence foundation). The only
-HTTP endpoint is `GET /health`, returning `{"status":"healthy"}`. Gmail and the
-dashboard above describe the project goal, not implemented features.
+Current scope: Build 1, task 2 (manual create/list/detail APIs backed by PostgreSQL).
+`GET /health` still returns `{"status":"healthy"}`. These unauthenticated APIs are
+local development functionality. Gmail and the dashboard above describe the project
+goal, not implemented features.
 
 ## Reproducible local setup (Windows PowerShell)
 
@@ -102,15 +103,14 @@ they do not normalize or trim stored text. The 200-character limits and required
 application date are local implementation choices, not mandated by reference v2.0.
 Company + role is **not unique**: repeated applications and concurrent processes are
 allowed. No status enum, user ownership, events, or other future entities are added.
-Status behaviour and API validation will be specified when needed.
+Status behaviour remains deferred. Current API validation is documented below.
 
 Synchronous SQLAlchemy sessions keep the first persistence task simple. A session
 groups queries; `database.session_scope()` commits successful work and rolls back
 on failure, then closes the session. `models.JobApplication` maps Python fields to
 columns; revision `0001` creates those columns; PostgreSQL's real table enforces
 the constraints even when a caller bypasses Python. Engines disable SQL echo and
-hide parameter values. CLI boundaries suppress raw database exceptions; future API
-handlers must also translate database errors safely, never log raw exceptions.
+hide parameter values. CLI and API error boundaries suppress raw database exceptions.
 
 ## Checks and running the existing application
 
@@ -130,8 +130,11 @@ configuration fails; no SQLite fallback is used. Tests verify real columns and
 constraints, commit/read through fresh connections, permit duplicate company/role,
 and provoke check-constraint failures to prove the whole transaction rolls back.
 Tests connect only as the dedicated test role. They delete only synthetic UUIDs
-created by that test; they never truncate tables, drop schemas, or touch development
-data. A process killed before cleanup may leave synthetic test records.
+created by that test (or the restart test's unique synthetic company marker); they
+never truncate tables, drop schemas, or touch development data. A process killed
+before cleanup may leave synthetic test records. API list tests include existing
+test records when determining expected ordering; they fail with a clear precondition
+if the test dataset exceeds the 10,000-offset window, rather than deleting records.
 
 The HTTP test uses HTTPX's in-memory ASGI transport, which does **not** start
 Uvicorn. To verify actual server behaviour in a second PowerShell terminal:
@@ -145,3 +148,96 @@ Expect 200 with `{"status":"healthy"}` and 404 with `{"detail":"Not Found"}`.
 If Windows sandbox permissions block pytest's temporary directory, run the same
 command in your normal local terminal; do not interpret a setup error as a passed
 test. Secrets, `.venv`, and cache files must remain outside review packages.
+
+## Manual application API
+
+Run the existing setup/migration commands only as needed on a fresh checkout.
+Task 2 adds no dependency or migration: the schema remains revision **0001**.
+Start locally with the Uvicorn command above; interactive API docs are at `/docs`.
+`main.app` selects development configuration. Automated API checks explicitly use
+`create_app("test")` and verify the test database/role/revision before any writes.
+There is no request parameter that switches databases.
+
+| Request | Result |
+| --- | --- |
+| `POST /applications` | 201 with one stored application, after a successful commit. |
+| `GET /applications?limit=20&offset=0` | 200 with `{ "items": [...], "limit": 20, "offset": 0 }`. |
+| `GET /applications/{id}` | 200 with one application, or 404 `{ "detail": "Application not found" }` for an absent valid UUID. |
+| Invalid body, UUID or pagination | 422 with FastAPI's structured validation errors. |
+| Database/configuration failure | 500 `{ "detail": "Internal server error" }`; no raw database diagnostics in response/logs. |
+
+Creation accepts exactly these three required fields:
+
+```json
+{"company":"Example Company","role":"Engineer","applied_on":"2026-09-17"}
+```
+
+Company and role must be strings. Surrounding whitespace is trimmed **before**
+checking the 1-200 character length; whitespace-only values are invalid. Dates must
+be valid `YYYY-MM-DD` JSON strings, not timestamps, datetime strings, or numbers.
+Past and future dates are both accepted. Additional fields, including `id` and
+`created_at`, are rejected. Repeated company/role applications remain allowed.
+
+Create/detail responses contain exactly `id`, `company`, `role`, `applied_on`, and
+`created_at`; the list uses the same objects inside `items`. Example shape
+(illustrative generated values):
+
+```json
+{
+  "id": "ae708452-d074-4fef-a6bd-6cbdbbbd15bf",
+  "company": "Example Company",
+  "role": "Engineer",
+  "applied_on": "2026-09-17",
+  "created_at": "2026-09-21T10:00:00Z"
+}
+```
+
+List ordering is **created_at ascending, then UUID ascending**, so records sharing
+a timestamp have deterministic ordering. `limit` defaults to 20 and allows 1-100;
+`offset` defaults to 0 and allows 0-10,000. There is no total count or next-page token.
+An offset beyond the available records returns an empty `items` array. Ordering is
+deterministic for a fixed dataset; separate pages are not a snapshot across concurrent
+writes. The offset cap deliberately limits the local API's pagination window.
+
+`database.get_engine()` creates one lazy engine per app, protected against concurrent
+first requests. FastAPI's lifespan disposes it on normal shutdown. `/health` and
+unknown routes require neither database configuration nor connectivity. Each route
+uses `session_scope()`, converting ORM records to Pydantic response objects before
+the session closes. Creation exits the transaction (committing) **before** returning
+201. A simulated pre-commit failure is tested to return 500 and roll back the flushed
+record. As with ordinary transactional APIs, a connection loss after the server has
+committed can leave the client uncertain; there is no idempotency-key mechanism in
+this task, and retrying a create can create another application.
+
+API behaviour and lifecycle decisions use the current official
+[FastAPI lifespan documentation](https://fastapi.tiangolo.com/advanced/events/) and
+[Pydantic string constraints](https://pydantic.dev/docs/validation/latest/api/pydantic/types/).
+
+### API verification and practice
+
+```powershell
+# Full suite, including real DB writes/rollback and two real Uvicorn processes:
+.\.venv\Scripts\python.exe -m pytest -q --run-db
+# Only the actual application-process restart check (test database only):
+.\.venv\Scripts\python.exe -m pytest -q --run-db tests/test_api_restart.py
+```
+
+Most API tests use in-memory HTTP transport against **real PostgreSQL**, not a
+mock database. Commit/query failures and engine lifecycle are explicitly simulated
+where needed. The restart test uses real loopback HTTP, stops its first Uvicorn
+process, starts a new one and retrieves the committed record. It does not restart
+PostgreSQL or write development records. Server subprocess output is suppressed;
+in-process failure tests assert that synthetic diagnostic markers never enter logs.
+
+Suggested learning checkpoint (not yet completed): with the local app running,
+send this invalid request from PowerShell and explain why it returns 422 instead
+of saving a record. Then locate the string constraint in `schemas.py`:
+
+```powershell
+$body = @{ company = '   '; role = 'Engineer'; applied_on = '2026-09-17' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/applications -ContentType 'application/json' -Body $body
+```
+
+PowerShell reports the non-success status as an error; the API response is the
+expected validation failure. The earlier detailed transaction learning checkpoint
+remains pending too. These instructions do not claim either checkpoint is complete.
