@@ -1,12 +1,71 @@
 # applysync
 AI-powered privacy-first job application tracker that automatically syncs Gmail application emails into a Kanban dashboard.
 
-Current scope: Build 1, task 2 (manual create/list/detail APIs backed by PostgreSQL).
-`GET /health` still returns `{"status":"healthy"}`. These unauthenticated APIs are
-local development functionality. Gmail and the dashboard above describe the project
-goal, not implemented features.
+Current scope: Build 2, task 1 adds an interactive frontend **design preview** with
+synthetic, in-memory applications. The existing Build 1 create/list/detail APIs and
+`GET /health` remain unchanged. The preview does not call them. Gmail and automatic
+tracking above describe the project goal, not implemented features.
+
+## Frontend design preview (no backend required)
+
+Tested with **Node 22.12.0 and npm 10.9.0** on Windows. Use npm for this frontend;
+exact dependency versions are recorded in `frontend/package.json` and its lockfile.
+From PowerShell:
+
+```powershell
+Set-Location 'C:\Users\sanja\Desktop\ApplySync\frontend'
+npm.cmd ci
+npm.cmd run dev
+```
+
+Open **http://127.0.0.1:5173/applications**. Stop with Ctrl+C. Port 5173 is fixed;
+if it is occupied, stop your previous frontend server first. The backend server and
+PostgreSQL are not needed for this preview. Do not copy backend secrets into frontend
+environment files; browser-visible configuration cannot protect credentials.
+
+Use Board/List over the same nine fictional records, search by company/role, and
+combine search with a sample-stage filter. Cards/list rows open routed details.
+The Add application form trims text, rejects blank or over-200-character values,
+and accepts valid calendar dates including future dates. New records start in the
+provisional **Applied** stage and appear in both views. Existing filters remain
+selected, so they may hide a new record; the success message explains this.
+
+All records are held in React memory. Additions **reset on reload**, and reopening
+a new-record detail URL after reload shows a clear missing-preview-record message.
+Search/filter/view selections live in URL query parameters, not browser storage.
+Sample stages live outside the API-shaped `Application` type. There is no backend
+stage contract, drag-and-drop, API request, local/session storage, authentication,
+remote logo request, or persistent save. Backend integration is the next task.
+
+The interface follows the three supplied `docs/design.pdf` screenshots with a white
+sidebar/cards, cool-gray workspace, purple actions, pastel board headers and restrained
+detail hierarchy. On phones the sidebar becomes a menu, list records stack, and
+details/forms fill the screen. The board scrolls inside its own region. Escape closes
+panels; keyboard focus returns to the trigger. Reduced-motion preferences are honored.
+
+Frontend checks (run from `frontend/`):
+
+```powershell
+npm.cmd run typecheck
+npm.cmd run build
+npm.cmd run test
+# One-time download for browser checks:
+npx.cmd playwright install chromium
+npm.cmd run test:e2e
+```
+
+Browser tests use a temporary production preview server on port 4173 and save
+screenshots under `docs/screenshots/Build2_Task1/`. Keep that port free. Tests cover
+search/filter/view state, validation, preview creation/reset, route-backed details,
+keyboard handling, reduced motion and desktop/mobile layouts. Native dialog behaviour
+is tested in Chromium; the component-test DOM only supplies a minimal dialog stub.
+
+See [Build 2 Task 1 review](docs/Build2_Task1_Review.md) for evidence, reference
+comparisons, dependency choices, screenshots, limitations and a learning walkthrough.
 
 ## Reproducible local setup (Windows PowerShell)
+
+The following commands concern the **backend** and are not required for the frontend preview.
 
 Use CPython **3.14.2**, the existing `.venv`, and local PostgreSQL (inspected server
 installation: 14.7). From the repository root:
