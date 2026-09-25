@@ -1,10 +1,93 @@
 # applysync
 AI-powered privacy-first job application tracker that automatically syncs Gmail application emails into a Kanban dashboard.
 
-Current scope: Build 2, task 1 adds an interactive frontend **design preview** with
-synthetic, in-memory applications. The existing Build 1 create/list/detail APIs and
-`GET /health` remain unchanged. The preview does not call them. Gmail and automatic
-tracking above describe the project goal, not implemented features.
+Current scope: Build 2, task 2 connects the approved frontend to the PostgreSQL
+create/list/detail APIs. `/applications` displays stored data; the explicitly separate
+`/preview/applications` retains the fictional Board/List preview. Gmail and automatic
+tracking above describe the project goal, not implemented features. This is local,
+unauthenticated development functionality, not a public deployment.
+
+## Integrated interface (two PowerShell terminals)
+
+Use the existing backend `.venv`, provisioned local databases and ignored root
+`.env`. Do not reprovision or replace existing credentials. For a fresh machine,
+follow the backend setup below first. Terminal 1, from the repository root:
+
+```powershell
+Set-Location 'C:\Users\sanja\Desktop\ApplySync'
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Terminal 2, from `frontend/`:
+
+```powershell
+Set-Location 'C:\Users\sanja\Desktop\ApplySync\frontend'
+npm.cmd ci
+npm.cmd run dev
+```
+
+Open **http://127.0.0.1:5173/applications**. Backend health is
+http://127.0.0.1:8000/health and Swagger is http://127.0.0.1:8000/docs.
+Stop your own servers with Ctrl+C; reuse existing correct servers rather than
+starting duplicates. Restart an older backend process to load the new CORS policy.
+
+The public `VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000`. To configure a
+different local port, copy `frontend/.env.example` to `frontend/.env.local` **only
+if that local file does not already exist**, replace its placeholder with your
+local API origin (for example `http://127.0.0.1:8000`), and restart Vite. This
+variable is browser-visible and must contain no credentials, token, query string
+or database URL. Root backend `.env` is separate and must never be copied into
+the frontend. The client accepts local HTTP origins only for this task.
+
+FastAPI allows exactly `http://localhost:5173`, `http://127.0.0.1:5173`,
+`http://localhost:4173` and `http://127.0.0.1:4173`, with GET/POST and Content-Type.
+There is no wildcard or credential support. CORS permits browser cross-origin
+reads; it is not authentication or ownership protection.
+
+Stored records share Board/List views (List is the default). The Board uses one
+neutral **Stage not recorded** column and explains that grouping will be available
+when stage tracking exists. This heading is only a display fallback; no stage is
+assigned or saved. Switching views retains loaded-page search and pagination.
+Pages contain at most
+20 records, ordered by `created_at ASC, id ASC`. Previous/Next controls use the
+existing offset contract, up to 10,000. A full last page may lead to an empty next
+page because the API has no total/has-more field. Counts describe the loaded page,
+not the database total. Search explicitly covers **only the loaded page**. No
+whole-database fetch or global search is implemented.
+
+Creation trims/validates text and dates, disables repeat submission while saving,
+and shows success only after a confirmed response. It refreshes list queries and
+opens the returned record's detail URL; reload performs a real detail GET. Since
+the list is oldest-first, the new record may be on a later page. Read failures
+have retry controls. Failed creation retains input; uncertain network/server
+outcomes instruct you to check the list before resubmitting. POST is never retried
+automatically. Duplicate company/role applications remain allowed.
+
+The client uses TanStack Query 5.103.2 with the shared `src/api.ts` fetch client.
+See [Build 2 Task 2 review](docs/Build2_Task2_Review.md) for code, checks and limitations.
+
+From the repository root, run backend regression checks and the guarded real
+browser integration check (existing migrated **test** database required):
+
+```powershell
+Set-Location 'C:\Users\sanja\Desktop\ApplySync'
+.\.venv\Scripts\python.exe -m pytest --run-db -q
+.\.venv\Scripts\python.exe -m scripts.run_frontend_integration
+```
+
+Install frontend dependencies and Chromium using the commands below first. Keep
+port 4173 free. The integration runner verifies test database/role/revision,
+inserts 21 uniquely marked synthetic fixtures, starts its own test API on a free
+loopback port and a temporary frontend on 4173, and runs real cross-origin browser
+create/read/reload checks. It independently verifies the committed row in
+PostgreSQL, stops only its own servers, rechecks the database target, and removes
+only its own marked records. It neither clears development data nor runs DDL.
+Do not invoke `npm run test:integration` directly against an arbitrary backend;
+the Python runner supplies its guarded target and run marker.
+
+Manual check: add one fictional development application, note its generated
+detail URL, reload that page and verify the record remains. This is a deliberate
+development record; automated checks do not remove it. The API has no delete endpoint.
 
 ## Frontend design preview (no backend required)
 
@@ -18,7 +101,7 @@ npm.cmd ci
 npm.cmd run dev
 ```
 
-Open **http://127.0.0.1:5173/applications**. Stop with Ctrl+C. Port 5173 is fixed;
+Open **http://127.0.0.1:5173/preview/applications**. Stop with Ctrl+C. Port 5173 is fixed;
 if it is occupied, stop your previous frontend server first. The backend server and
 PostgreSQL are not needed for this preview. Do not copy backend secrets into frontend
 environment files; browser-visible configuration cannot protect credentials.
@@ -35,7 +118,9 @@ a new-record detail URL after reload shows a clear missing-preview-record messag
 Search/filter/view selections live in URL query parameters, not browser storage.
 Sample stages live outside the API-shaped `Application` type. There is no backend
 stage contract, drag-and-drop, API request, local/session storage, authentication,
-remote logo request, or persistent save. Backend integration is the next task.
+remote logo request, or persistent save **on this preview route**. The normal
+Applications route uses the real API independently. Leaving the preview also
+unmounts its temporary fixture state.
 
 The interface follows the three supplied `docs/design.pdf` screenshots with a white
 sidebar/cards, cool-gray workspace, purple actions, pastel board headers and restrained
@@ -55,10 +140,12 @@ npm.cmd run test:e2e
 ```
 
 Browser tests use a temporary production preview server on port 4173 and save
-screenshots under `docs/screenshots/Build2_Task1/`. Keep that port free. Tests cover
+screenshots under `docs/screenshots/Build2_Task2/`. Keep that port free. Tests cover
 search/filter/view state, validation, preview creation/reset, route-backed details,
 keyboard handling, reduced motion and desktop/mobile layouts. Native dialog behaviour
 is tested in Chromium; the component-test DOM only supplies a minimal dialog stub.
+`test:e2e` includes mocked real-data failure checks and preview regressions; the
+separate guarded Python runner above proves the actual database integration.
 
 See [Build 2 Task 1 review](docs/Build2_Task1_Review.md) for evidence, reference
 comparisons, dependency choices, screenshots, limitations and a learning walkthrough.

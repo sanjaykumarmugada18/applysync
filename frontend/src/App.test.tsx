@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 import { App } from './App'
 
-function setup(path = '/applications', empty = false) {
+function setup(path = '/preview/applications', empty = false) {
   const user = userEvent.setup()
   render(<MemoryRouter initialEntries={[path]}><App initialRecords={empty ? [] : undefined} /></MemoryRouter>)
   return user
@@ -46,7 +46,7 @@ it('preserves input on validation errors and adds a trimmed preview record to bo
   expect(screen.getByRole('link', { name: 'Engineer at Preview Company' })).toBeInTheDocument()
 })
 it('opens route-backed detail and returns without losing search', async () => {
-  const user = setup('/applications?q=cedar&view=list')
+  const user = setup('/preview/applications?q=cedar&view=list')
   await user.click(screen.getByRole('link', { name: 'Product Designer at Cedar & Finch' }))
   expect(screen.getByRole('dialog')).toHaveTextContent('Application overview')
   expect(screen.getByRole('dialog')).toHaveTextContent('21 Sept 2026')
@@ -55,7 +55,7 @@ it('opens route-backed detail and returns without losing search', async () => {
   expect(screen.getByRole('searchbox')).toHaveValue('cedar')
 })
 it('supports an empty dataset and direct missing-record routes', () => {
-  setup('/applications/missing', true)
+  setup('/preview/applications/missing', true)
   expect(screen.getByText('Your next chapter starts here')).toBeInTheDocument()
   expect(screen.getByRole('dialog')).toHaveTextContent('Application not found')
 })

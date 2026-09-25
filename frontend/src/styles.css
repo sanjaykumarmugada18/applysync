@@ -208,3 +208,15 @@ input::placeholder { color: #667085; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Real records reuse the approved list; the API has no stage column. */
+.stored-list .list-heading, .stored-list .list-row { grid-template-columns: 1.1fr 1.3fr 130px 20px; }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding-top: 20px; color: var(--color-muted); font-size: 13px; }
+.record-id { overflow-wrap: anywhere; font-size: 13px; }
+.stored-board { width: min(100%, 280px); }
+.neutral-heading { background: #eaedf1; color: #424b5b; }
+.board-explanation { color: var(--color-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px; }
+@media (max-width: 620px) {
+  .stored-list .list-row { grid-template-columns: minmax(0, 1fr); }
+  .pagination span { order: 3; width: 100%; text-align: center; }
+}

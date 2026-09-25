@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from threading import Lock
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -32,6 +33,14 @@ def create_app(database_target: str = "dev") -> FastAPI:
     if database_target not in {"dev", "test"}:
         raise ConfigurationError("Database target must be dev or test.")
     application = FastAPI(lifespan=lifespan)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[f"http://{host}:{port}" for host in ("localhost", "127.0.0.1")
+                       for port in (5173, 4173)],
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
     application.state.database_target = database_target
     application.state.engine = None
     application.state.engine_lock = Lock()

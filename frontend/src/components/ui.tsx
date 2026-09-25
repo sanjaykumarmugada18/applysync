@@ -12,8 +12,8 @@ export function PreviewNotice({ children = 'Design preview · Sample data' }: { 
   return <span className="preview-notice"><span className="preview-dot" />{children}</span>
 }
 
-export function Modal({ title, subtitle, children, onClose, variant = 'panel' }: {
-  title: string; subtitle?: string; children: ReactNode; onClose: () => void; variant?: 'panel' | 'form' | 'navigation'
+export function Modal({ title, subtitle, children, onClose, variant = 'panel', busy = false, preview = true }: {
+  title: string; subtitle?: string; children: ReactNode; onClose: () => void; variant?: 'panel' | 'form' | 'navigation'; busy?: boolean; preview?: boolean
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
@@ -41,10 +41,10 @@ export function Modal({ title, subtitle, children, onClose, variant = 'panel' }:
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }}
-    onCancel={event => { event.preventDefault(); onClose() }}>
+    onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
     <div className="modal-heading">
-      <div><p className="eyebrow">APPLYSYNC PREVIEW</p><h2 id={titleId}>{title}</h2>{subtitle && <p className="text-muted mt-2">{subtitle}</p>}</div>
-      <button className="icon-button shrink-0" aria-label="Close panel" onClick={onClose}><X size={20} /></button>
+      <div><p className="eyebrow">{preview ? 'APPLYSYNC PREVIEW' : 'APPLYSYNC · LOCAL DEVELOPMENT'}</p><h2 id={titleId}>{title}</h2>{subtitle && <p className="text-muted mt-2">{subtitle}</p>}</div>
+      <button disabled={busy} className="icon-button shrink-0" aria-label="Close panel" onClick={onClose}><X size={20} /></button>
     </div>
     {children}
   </dialog>

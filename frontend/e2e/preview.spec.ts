@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 
-const screenshots = '../docs/screenshots/Build2_Task1'
+const screenshots = '../docs/screenshots/Build2_Task2/preview'
 mkdirSync(screenshots, { recursive: true })
 
 test('intermediate viewport widths keep controls inside the page', async ({ page }) => {
-  await page.goto('/applications')
+  await page.goto('/preview/applications')
   for (const width of [320, 768, 860, 900, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `page overflow at ${width}px`).toBe(true)
@@ -15,7 +15,7 @@ test('intermediate viewport widths keep controls inside the page', async ({ page
 test('desktop reference layout, shared filtering, details and focus return', async ({ page }) => {
   const failures: string[] = []
   page.on('pageerror', error => failures.push(error.message))
-  await page.goto('/applications')
+  await page.goto('/preview/applications')
   await expect(page.getByRole('link', { name: 'Product Designer at Cedar & Finch' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Offer, 0 applications' })).toContainText('No applications here')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -51,7 +51,7 @@ test('preview validation, add, reload reset and no data requests', async ({ page
   page.on('request', request => {
     if (['fetch', 'xhr'].includes(request.resourceType())) dataRequests.push(request.url())
   })
-  await page.goto('/applications')
+  await page.goto('/preview/applications')
   const trigger = page.getByRole('link', { name: 'Add application', exact: true })
   await trigger.click()
   const dialog = page.getByRole('dialog')
@@ -80,7 +80,7 @@ test('preview validation, add, reload reset and no data requests', async ({ page
 
 test('mobile navigation, contained board, stacked list and full-screen details', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/applications')
+  await page.goto('/preview/applications')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   const board = page.getByRole('region', { name: /Application board/ })
   expect(await board.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
@@ -105,7 +105,7 @@ test('mobile navigation, contained board, stacked list and full-screen details',
 test('reduced motion and board scroll position survive opening a detail', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 1100, height: 850 })
-  await page.goto('/applications')
+  await page.goto('/preview/applications')
   const board = page.getByRole('region', { name: /Application board/ })
   await board.evaluate(element => { element.scrollLeft = element.scrollWidth })
   const before = await board.evaluate(element => element.scrollLeft)
