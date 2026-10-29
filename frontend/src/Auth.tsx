@@ -91,6 +91,7 @@ export function ProtectedApplications({ children }: { children: ReactNode }) {
 }
 
 export function internalDestination(value: string | null) {
+  if (value === '/settings/gmail') return value
   if (!value || !/^\/applications(?:\/(?:new|[0-9a-fA-F-]{36}))?(?:\?[^#]*)?$/.test(value) || value.includes('\\')) return '/applications'
   return value
 }

@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 
 const api = process.env.APPLYSYNC_E2E_API_ORIGIN!
 const marker = process.env.APPLYSYNC_E2E_RUN_ID!
-const screenshots = '../docs/screenshots/Build3'
+const screenshots = process.env.APPLYSYNC_E2E_SCREENSHOTS ?? 'test-results/integration-screenshots'
 mkdirSync(screenshots, { recursive: true })
 
 test('real two-account sessions, ownership, creation, reload and logout', async ({ page, browser }) => {

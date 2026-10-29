@@ -25,8 +25,8 @@ def test_upgrade_preserves_legacy_and_repeats(test_engine, legacy):
             id_ = uuid4()
             if legacy:
                 connection.execute(text("INSERT INTO job_applications (id,company,role,applied_on) VALUES (:id,'Synthetic legacy','Engineer',:day)"), {"id": id_, "day": date(2026, 9, 1)})
-            command.upgrade(config, "head")
-            command.upgrade(config, "head")
+            command.upgrade(config, "0002")
+            command.upgrade(config, "0002")
             assert connection.scalar(text("select version_num from alembic_version")) == "0002"
             assert set(inspect(connection).get_table_names(schema=schema)) == {"alembic_version", "users", "auth_sessions", "job_applications"}
             assert connection.scalar(text("select count(*) from job_applications")) == int(legacy)

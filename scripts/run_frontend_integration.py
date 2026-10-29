@@ -26,7 +26,7 @@ def verify_target(engine):
     with engine.connect() as connection:
         if (connection.scalar(text("SELECT current_database()")) != "applysync_test"
                 or connection.scalar(text("SELECT current_user")) != "applysync_test"
-                or connection.scalar(text("SELECT version_num FROM alembic_version")) != "0002"):
+                or connection.scalar(text("SELECT version_num FROM alembic_version")) != "0003"):
             raise RuntimeError("Refusing an unverified integration database target.")
 
 

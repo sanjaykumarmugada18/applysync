@@ -58,7 +58,7 @@ export async function request(path: string, body?: unknown, signal?: AbortSignal
     })
   } catch { throw new ApiError('network') }
   if (response.status === 401) {
-    if (path.startsWith('/applications') && !signal?.aborted) window.dispatchEvent(new Event('applysync:expired'))
+    if ((path.startsWith('/applications') || path.startsWith('/gmail')) && !signal?.aborted) window.dispatchEvent(new Event('applysync:expired'))
     throw new ApiError('unauthorized')
   }
   if (response.status === 403) throw new ApiError('forbidden')

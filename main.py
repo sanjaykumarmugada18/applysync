@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from threading import Lock
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,16 @@ from config import ConfigurationError
 from auth import router as auth_router, AttemptLimiter
 from auth_config import allowed_origins
 from fastapi.exceptions import RequestValidationError
+from gmail_routes import router as gmail_router
+
+
+class OAuthAccessFilter(logging.Filter):
+    def filter(self, record):
+        # Uvicorn's default access line contains query strings, including codes.
+        return "/gmail/callback" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(OAuthAccessFilter())
 
 
 @asynccontextmanager
@@ -47,8 +58,10 @@ def create_app(database_target: str = "dev") -> FastAPI:
                     or request.headers.get("x-applysync-csrf") != "1"):
                 return JSONResponse(status_code=403, content={"detail": "Request protection failed"})
         response = await call_next(request)
-        if request.url.path.startswith(("/auth", "/applications")):
+        if request.url.path.startswith(("/auth", "/applications", "/gmail")):
             response.headers["Cache-Control"] = "no-store"
+        if request.url.path == "/gmail/callback":
+            response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
     @application.exception_handler(RequestValidationError)
@@ -73,6 +86,7 @@ def create_app(database_target: str = "dev") -> FastAPI:
     application.add_api_route("/health", health, methods=["GET"])
     application.include_router(router)
     application.include_router(auth_router)
+    application.include_router(gmail_router)
     return application
 
 

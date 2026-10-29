@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, String, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, String, Text, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -43,3 +43,27 @@ class JobApplication(Base):
     applied_on: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                server_default=func.now())
+
+
+class GmailConnection(Base):
+    __tablename__ = "gmail_connections"
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    google_subject: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str | None] = mapped_column(String(254))
+    encrypted_refresh_token: Mapped[str | None] = mapped_column(Text)
+    granted_scopes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    revocation_warning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (CheckConstraint("status IN ('connected','disconnected','reauthorization_needed')", name="ck_gmail_status"),)
+
+
+class GmailOAuthState(Base):
+    __tablename__ = "gmail_oauth_states"
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("auth_sessions.id", ondelete="CASCADE"), nullable=False)
+    encrypted_flow: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

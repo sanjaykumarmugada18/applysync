@@ -228,3 +228,10 @@ input::placeholder { color: #667085; }
 .signed-in { display: flex; gap: 12px; align-items: center; min-width: 0; }
 .signed-in span { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 @media (max-width: 700px) { .topbar { flex-wrap: wrap; height: auto; min-height: 72px; gap: 10px; padding-block: 12px; } .signed-in { margin-left: auto; } .signed-in span { max-width: 160px; } .auth-card { margin: 20px auto; padding: 22px; } }
+
+/* Gmail settings reuse the approved palette, controls and responsive shell. */
+.nav-link + .nav-link { margin-top: 8px; }
+.nav-link:not([aria-current]) { background: transparent; border-color: transparent; color: var(--color-muted); }
+.gmail-card { max-width: 640px; background: white; border: 1px solid var(--color-line); border-radius: 10px; line-height: 1.7; overflow-wrap: anywhere; }
+.gmail-card h2, .gmail-card h3 { font-weight: 650; margin-bottom: 12px; }
+.gmail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }

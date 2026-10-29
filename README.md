@@ -1,10 +1,11 @@
 # applysync
 AI-powered privacy-first job application tracker that automatically syncs Gmail application emails into a Kanban dashboard.
 
-Current scope: Build 3 adds registration, login, revocable JWT-cookie sessions and
+Current scope: Build 4 Task 1 adds optional Gmail connection/disconnection settings,
+with no message reading or synchronization. Build 3 supplies registration, login, revocable JWT-cookie sessions and
 server-side ownership to the integrated PostgreSQL create/list/detail APIs. `/applications` displays stored data; the explicitly separate
-`/preview/applications` retains the fictional Board/List preview. Gmail and automatic
-tracking above describe the project goal, not implemented features. This remains local development functionality, not a public deployment.
+`/preview/applications` retains the fictional Board/List preview. Automatic
+tracking above describes the project goal, not an implemented feature. This remains local development functionality, not a public deployment.
 Read the Build 3 setup and security policy below before starting the backend.
 
 ## Build 3 setup and session policy
@@ -510,3 +511,133 @@ frontend, submit a whitespace-only company and locate the string constraint in
 `schemas.py`. Direct unauthenticated PowerShell POSTs now fail request protection
 or authentication first. The detailed request-flow and earlier transaction
 exercises remain pending; this task does not claim they were completed.
+
+
+## Build 4 Task 1: Gmail connection setup (local only)
+
+The settings page is **http://127.0.0.1:5173/settings/gmail**. Sign in to
+ApplySync first at **http://127.0.0.1:5173/login**. Google authorization is a
+separate connection, not an alternative ApplySync login. Missing Gmail settings
+leave health, authentication and manual tracking available.
+
+Existing databases have been upgraded to `0003` in this workspace. For another
+checkout, inspect `python -m alembic upgrade 0002:0003 --sql`, then run the ordinary
+`upgrade head` for dev and `-x target=test upgrade head` for test. Do not provision
+or reset an existing database. The new migration only adds two Gmail tables.
+
+### One-time Google Cloud setup
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create/select
+   a dedicated ApplySync development project. In **APIs & Services > Library**,
+   find **Gmail API**, then **Enable**. No API key or service account is required.
+2. Open **Google Auth platform > Branding**. Choose **Get Started** if needed;
+   set the app name to ApplySync development, select your support email, provide
+   your contact email and complete the consent setup. Choose **External** for a
+   personal Gmail account.
+3. In **Audience**, retain **Testing** status. Under **Test users > Add users**, add
+   only the Google accounts you intend to test with. Save; do not publish the app.
+4. In **Data Access > Add or Remove Scopes**, select only `openid`, `email`
+   (the Console may display `https://www.googleapis.com/auth/userinfo.email`), and
+   `https://www.googleapis.com/auth/gmail.readonly`. Save. Readonly is a restricted
+   mailbox-wide scope; a label is not an OAuth restriction. This task makes no
+   mailbox requests. Public release/verification is outside this task.
+5. In **Clients > Create Client**, choose **Web application**, name it ApplySync
+   local, and add exactly this **Authorized redirect URI**:
+   `http://127.0.0.1:8000/gmail/callback`. This is a server-side code flow, so
+   **Authorized JavaScript origins can remain empty**. The frontend origin used
+   by ApplySync is exactly `http://127.0.0.1:5173`; it is not the callback URI.
+6. From the repository root run:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   .\.venv\Scripts\python.exe -m scripts.setup_gmail
+   ```
+
+   Open the ignored root `.env` in VS Code locally. Enter the new client's ID in
+   `APPLYSYNC_GOOGLE_CLIENT_ID` and its secret in `APPLYSYNC_GOOGLE_CLIENT_SECRET`.
+   The helper appends missing settings only and generates
+   `APPLYSYNC_GMAIL_ENCRYPTION_KEY` without displaying it. Keep its generated value;
+   it is separate from `APPLYSYNC_AUTH_SECRET`. Existing placeholders/invalid
+   settings are deliberately not overwritten; correct those locally.
+
+   Keep `APPLYSYNC_GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/gmail/callback` and
+   `APPLYSYNC_GMAIL_FRONTEND_ORIGIN=http://127.0.0.1:5173`. Do not use `localhost`
+   for this flow, put secrets into frontend variables, or share `.env`, OAuth
+   URLs containing codes/state, cookies, or screenshots of credentials.
+7. Start the backend and frontend in separate PowerShell terminals if not already
+   running. Gmail settings are loaded on each operation, so entering them does not
+   require a server restart in the current implementation.
+
+   ```powershell
+   # Repository root:
+   .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --no-access-log
+   # Another terminal:
+   cd frontend
+   npm.cmd ci
+   npm.cmd run dev -- --port 5173 --strictPort
+   ```
+
+   Sign in on 127.0.0.1, open Gmail settings, choose Connect Google account, and
+   authorize only the intended test account/scopes. Confirm the connected address,
+   refresh the settings page, then disconnect. Google may require reauthorization
+   while the app remains in Testing. Live provider compatibility, consent and
+   revocation must be verified here; mocked tests are not a live OAuth result.
+
+Keep the encryption key private and backed up securely. Changing/losing it makes
+existing encrypted grants unusable; disconnect and authorize again, rather than
+silently overwriting the key. No automatic key rotation is implemented.
+
+### Connection contract and safeguards
+
+- `GET /gmail`: current user's `{available,status,email,revocation_warning}`.
+  Status is `not_connected`, `connected`, `disconnected`, or `reauthorization_needed`.
+  No token, database state hash, verifier, or provider diagnostic is returned.
+- `POST /gmail/start`: authenticated, exact allowed Origin and
+  `X-ApplySync-CSRF: 1`; returns one Google `authorization_url`. That protocol URL
+  necessarily contains random OAuth state and public client metadata, never a
+  client secret or PKCE verifier. Only the latest pending flow per user is valid.
+- `GET /gmail/callback`: Google browser redirect; requires the same ApplySync
+  session, valid one-use state within ten minutes, and the matching PKCE verifier.
+  Missing authentication returns 401. Other handled failures redirect to the fixed
+  settings URL with a safe result code. No caller-provided return URL is accepted.
+- `POST /gmail/disconnect`: same write protections; affects only the current
+  user. Clears stored authorization and pending state and attempts Google revocation.
+  Provider timeout/failure still commits local disconnection and a warning.
+  Revocation and the local update are serialized in one transaction: local fields
+  are cleared before the provider call, but durable commit follows that bounded
+  call. A process/database failure can leave the result uncertain; refresh status.
+  After a confirmed warning, remove access in
+  [Google account connections](https://myaccount.google.com/connections).
+  The token is erased, so there is no automatic server-side revocation retry.
+
+Disconnect explicitly before choosing a different Google account. Same-account
+reauthorization preserves the old encrypted refresh token only when Google omits
+a new one and a refresh confirms the old grant is usable. Access/ID tokens remain
+in memory. Logout revokes the ApplySync session and pending OAuth state, but does
+not disconnect a previously committed Gmail grant. No connection grants access
+to another ApplySync user's data.
+
+### Reproducible checks
+
+```powershell
+# Root, dedicated test database already migrated:
+.\.venv\Scripts\python.exe -m pytest --run-db -q -p no:cacheprovider --tb=short
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m scripts.run_frontend_integration
+# Frontend directory:
+npm.cmd run typecheck
+npm.cmd run build
+npm.cmd test
+npm.cmd run test:e2e
+```
+
+Google endpoints are faked in automated checks; no real mailbox is used. The real
+browser/database runner verifies two-account authentication/application regression
+against `applysync_test` only and cleans its own synthetic records. Its screenshots
+now default to ignored `frontend/test-results/integration-screenshots`, preserving
+historical review images. The Gmail browser screenshots are intentional synthetic
+review evidence in `docs/screenshots/Build4_Task1`.
+
+See [Build 4 Task 1 review](docs/Build4_Task1_Review.md) for source, security decisions,
+exact execution evidence and official documentation. Gmail label/filter verification
+and any message ingestion remain future work. Earlier learning exercises remain pending.

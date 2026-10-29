@@ -39,3 +39,5 @@ pycparser==3.0
 PyJWT==2.15.0
 email-validator==2.3.0
 dnspython==2.8.0
+
+cryptography==50.0.2
