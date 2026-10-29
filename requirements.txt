@@ -30,3 +30,12 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.4
 uvicorn==0.53.0
+
+# Build 3 authentication (CPython 3.14.2 Windows installation verified).
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+cffi==2.1.1
+pycparser==3.0
+PyJWT==2.15.0
+email-validator==2.3.0
+dnspython==2.8.0

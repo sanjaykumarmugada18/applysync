@@ -3,6 +3,8 @@
 from contextlib import contextmanager
 from pathlib import Path
 import socket
+import os
+import secrets
 import subprocess
 import sys
 import time
@@ -13,7 +15,8 @@ import pytest
 from sqlalchemy import delete
 
 from database import session_scope
-from models import JobApplication
+from models import JobApplication, User, AuthSession
+from sqlalchemy import select
 
 pytestmark = pytest.mark.database
 
@@ -61,11 +64,18 @@ def test_server():
 test_server.__test__ = False
 
 
-def test_committed_application_survives_uvicorn_restart(test_engine):
+def test_committed_application_survives_uvicorn_restart(test_engine, monkeypatch):
+    monkeypatch.setenv("APPLYSYNC_AUTH_SECRET", secrets.token_hex(32))
+    monkeypatch.setenv("APPLYSYNC_AUTH_MODE", "local")
+    email = f"{uuid4()}@example.com"
+    password = secrets.token_urlsafe(24)
     # test_engine verifies current database, current role and revision before spawning.
     company = f"Synthetic restart {uuid4()}"
     try:
         with test_server() as (client, first_process):
+            client.headers.update({"Origin": "http://127.0.0.1:5173", "X-ApplySync-CSRF": "1"})
+            assert client.post("/auth/register", json={"email": email, "password": password}).status_code == 201
+            cookies = client.cookies
             response = client.post("/applications", json={
                 "company": company, "role": "Engineer", "applied_on": "2026-09-17"})
             assert response.status_code == 201
@@ -73,6 +83,8 @@ def test_committed_application_survives_uvicorn_restart(test_engine):
         assert first_process.poll() is not None
         with test_server() as (client, second_process):
             assert first_process.pid != second_process.pid
+            client.cookies.update(cookies)
+            assert client.get("/auth/me").status_code == 200
             response = client.get(f'/applications/{stored["id"]}')
             assert response.status_code == 200
             assert response.json() == stored
@@ -80,3 +92,6 @@ def test_committed_application_survives_uvicorn_restart(test_engine):
         # A unique synthetic company also covers a response lost after commit.
         with session_scope(test_engine) as session:
             session.execute(delete(JobApplication).where(JobApplication.company == company))
+            ids = select(User.id).where(User.email == email)
+            session.execute(delete(AuthSession).where(AuthSession.user_id.in_(ids)))
+            session.execute(delete(User).where(User.email == email))

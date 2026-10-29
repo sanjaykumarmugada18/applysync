@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 
 const base = 'http://127.0.0.1:8000'
 const row = { id: '00000000-0000-4000-8000-000000000099', company: 'Synthetic Company', role: 'Engineer', applied_on: '2026-09-01', created_at: '2026-09-01T12:00:00Z' }
-const headers = { 'access-control-allow-origin': 'http://127.0.0.1:4173' }
+const headers = { 'access-control-allow-origin': 'http://127.0.0.1:4173', 'access-control-allow-credentials': 'true' }
 
 test('real Board/List share IDs, query state and paging with neutral stage fallback', async ({ page }) => {
   const records = Array.from({ length: 22 }, (_, i) => ({ ...row,
@@ -13,6 +13,7 @@ test('real Board/List share IDs, query state and paging with neutral stage fallb
   let reads = 0
   let writes = 0
   await page.route(`${base}/**`, async route => {
+    if (route.request().url().endsWith('/auth/me')) return route.fulfill({ headers, json: { id: 'synthetic-user', email: 'synthetic@example.com' } })
     const request = route.request()
     if (request.method() !== 'GET') { writes++; return route.abort() }
     const url = new URL(request.url())
@@ -45,7 +46,7 @@ test('real Board/List share IDs, query state and paging with neutral stage fallb
   await expect(page.getByRole('searchbox')).toHaveValue('Synthetic')
   expect(new URL(page.url()).searchParams.get('offset')).toBe('20')
   const secondPageIds = await ids('.application-card')
-  const shots = '../docs/screenshots/Build2_Task2/correction'
+  const shots = '../test-results/build3-layouts'
   mkdirSync(shots, { recursive: true })
   await page.screenshot({ path: `${shots}/stored-board.png`, fullPage: true })
   await page.getByRole('button', { name: 'List', exact: true }).click()
@@ -73,6 +74,7 @@ test('real Board/List share IDs, query state and paging with neutral stage fallb
 test('read network/server failures, retry, empty page and malformed pagination', async ({ page }) => {
   let state = 'network'
   await page.route(`${base}/**`, async route => {
+    if (route.request().url().endsWith('/auth/me')) return route.fulfill({ headers, json: { id: 'synthetic-user', email: 'synthetic@example.com' } })
     if (state === 'network') return route.abort('connectionrefused')
     await route.fulfill({ status: state === 'server' ? 500 : 200, headers, json: state === 'server' ? { detail: 'synthetic-private' } : { items: [], limit: 20, offset: 0 } })
   })
@@ -94,6 +96,7 @@ test('pending POST, backend validation, server/network uncertainty and success',
   let finish!: () => void
   let postCount = 0
   await page.route(`${base}/**`, async route => {
+    if (route.request().url().endsWith('/auth/me')) return route.fulfill({ headers, json: { id: 'synthetic-user', email: 'synthetic@example.com' } })
     if (route.request().method() === 'POST') {
       postCount++
       await new Promise<void>(resolve => { finish = resolve })
@@ -138,6 +141,7 @@ test('pending POST, backend validation, server/network uncertainty and success',
 test('direct detail read failure retries and full last page leads to honest empty next page', async ({ page }) => {
   let detailFails = true
   await page.route(`${base}/**`, async route => {
+    if (route.request().url().endsWith('/auth/me')) return route.fulfill({ headers, json: { id: 'synthetic-user', email: 'synthetic@example.com' } })
     const url = new URL(route.request().url())
     if (url.search) {
       const offset = Number(url.searchParams.get('offset'))

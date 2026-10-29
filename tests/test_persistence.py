@@ -14,8 +14,10 @@ pytestmark = pytest.mark.database
 def test_actual_schema(test_engine):
     schema = inspect(test_engine)
     columns = {column["name"]: column for column in schema.get_columns("job_applications")}
-    assert set(columns) == {"id", "company", "role", "applied_on", "created_at"}
-    assert all(not column["nullable"] for column in columns.values())
+    assert set(columns) == {"id", "company", "role", "applied_on", "created_at", "owner_id"}
+    assert all(not column["nullable"] for name, column in columns.items() if name != "owner_id")
+    assert columns["owner_id"]["nullable"]
+    assert schema.get_foreign_keys("job_applications")[0]["referred_table"] == "users"
     assert columns["company"]["type"].length == 200
     assert columns["role"]["type"].length == 200
     assert columns["created_at"]["type"].timezone

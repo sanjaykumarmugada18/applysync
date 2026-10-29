@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from database import session_scope
 from main import create_app
 from models import JobApplication
+from models import User
+from auth import current_user, Identity
 
 pytestmark = pytest.mark.database
 
@@ -19,7 +21,7 @@ def request(app, method, path, **kwargs):
     async def send():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://test") as client:
-            return await client.request(method, path, **kwargs)
+            return await client.request(method, path, headers={"Origin": "http://127.0.0.1:5173", "X-ApplySync-CSRF": "1"}, **kwargs)
     return asyncio.run(send())
 
 
@@ -27,6 +29,13 @@ def request(app, method, path, **kwargs):
 def api(test_engine):
     app = create_app("test")
     app.state.engine = test_engine  # Fixture already verified database, role and revision.
+    with session_scope(test_engine) as session:
+        user = User(email=f"{uuid4()}@example.com", password_hash="not-a-login-account")
+        session.add(user)
+        session.flush()
+        identity = Identity.model_validate(user)
+    app.dependency_overrides[current_user] = lambda: identity
+    app.state.test_owner_id = identity.id
     owned_ids = set()
 
     def remember_inserts(session, context):
@@ -40,6 +49,7 @@ def api(test_engine):
         event.remove(Session, "after_flush", remember_inserts)
         with session_scope(test_engine) as session:
             session.execute(delete(JobApplication).where(JobApplication.id.in_(owned_ids)))
+            session.execute(delete(User).where(User.id == identity.id))
 
 
 @pytest.fixture
@@ -68,6 +78,7 @@ def test_create_retrieve_list_and_duplicate(api, payload):
             assert stored.company == record["company"] and stored.role == record["role"]
             assert stored.applied_on.isoformat() == record["applied_on"]
             position = session.scalar(select(func.count()).select_from(JobApplication).where(
+                JobApplication.owner_id == app.state.test_owner_id,
                 (JobApplication.created_at < stored.created_at) |
                 ((JobApplication.created_at == stored.created_at) & (JobApplication.id < stored.id))))
         assert position <= 10_000, "Test database exceeds the documented pagination window"
@@ -88,7 +99,7 @@ def test_ordering_pagination_and_empty_page(api, payload):
     with session_scope(engine) as session:
         session.execute(update(JobApplication).where(JobApplication.id.in_(ids)).values(
             created_at=datetime(1900, 1, 1, tzinfo=timezone.utc)))
-        expected = session.scalars(select(JobApplication.id).order_by(
+        expected = session.scalars(select(JobApplication.id).where(JobApplication.owner_id == app.state.test_owner_id).order_by(
             JobApplication.created_at, JobApplication.id)).all()
     assert len(expected) <= 10_000, "Test database exceeds the documented pagination window"
     for offset in range(0, min(len(expected), 6), 2):

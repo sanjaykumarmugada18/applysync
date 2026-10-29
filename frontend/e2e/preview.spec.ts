@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 
-const screenshots = '../docs/screenshots/Build2_Task2/preview'
+const screenshots = 'test-results/preview'
 mkdirSync(screenshots, { recursive: true })
 
 test('intermediate viewport widths keep controls inside the page', async ({ page }) => {

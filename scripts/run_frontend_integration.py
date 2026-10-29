@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import os
+import secrets
 from pathlib import Path
 import socket
 import subprocess
@@ -14,7 +15,8 @@ from sqlalchemy import delete, func, select, text
 
 from config import load_settings
 from database import build_engine, session_scope
-from models import JobApplication
+from models import JobApplication, User, AuthSession
+from auth import hasher
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASE = "configuration"
@@ -24,7 +26,7 @@ def verify_target(engine):
     with engine.connect() as connection:
         if (connection.scalar(text("SELECT current_database()")) != "applysync_test"
                 or connection.scalar(text("SELECT current_user")) != "applysync_test"
-                or connection.scalar(text("SELECT version_num FROM alembic_version")) != "0001"):
+                or connection.scalar(text("SELECT version_num FROM alembic_version")) != "0002"):
             raise RuntimeError("Refusing an unverified integration database target.")
 
 
@@ -43,6 +45,10 @@ def run():
     engine = build_engine(load_settings("test"))
     process = None
     marker = f"Synthetic Browser {uuid4()}"
+    account_prefix = uuid4().hex
+    email_a, email_b = f"{account_prefix}-a@example.com", f"{account_prefix}-b@example.com"
+    password = secrets.token_urlsafe(24)
+    auth_env = {**os.environ, "APPLYSYNC_AUTH_SECRET": secrets.token_hex(32), "APPLYSYNC_AUTH_MODE": "local"}
     verified = False
     try:
         verify_target(engine)
@@ -50,8 +56,12 @@ def run():
         PHASE = "test fixture creation"
         # Enough owned fixtures to exercise real pagination, even in a nonempty DB.
         with session_scope(engine) as session:
+            user = User(email=email_a, password_hash=hasher.hash(password))
+            session.add(user)
+            session.flush()
+            owner_id = user.id
             for i in range(21):
-                session.add(JobApplication(company=f"{marker} seed {i:02}", role="Engineer",
+                session.add(JobApplication(company=f"{marker} seed {i:02}", role="Engineer", owner_id=owner_id,
                     applied_on=datetime(2026, 9, 1).date(),
                     created_at=datetime(1900, 1, 1, tzinfo=timezone.utc)))
         with socket.socket() as probe:
@@ -62,7 +72,7 @@ def run():
         print("Verified test target; starting isolated API.", flush=True)
         process = subprocess.Popen([sys.executable, "-c",
             f"from scripts.run_frontend_integration import serve; serve({port})"],
-            cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            cwd=ROOT, env=auth_env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         with httpx.Client(trust_env=False, timeout=2) as client:
             deadline = time.monotonic() + 20
@@ -79,6 +89,8 @@ def run():
                     raise RuntimeError("Isolated test API startup timed out.")
                 time.sleep(.1)
         env = {**os.environ, "APPLYSYNC_E2E_RUN_ID": marker,
+               "APPLYSYNC_E2E_EMAIL_A": email_a, "APPLYSYNC_E2E_EMAIL_B": email_b,
+               "APPLYSYNC_E2E_PASSWORD": password,
                "APPLYSYNC_E2E_API_ORIGIN": origin, "VITE_API_BASE_URL": origin}
         command = ["cmd.exe", "/d", "/c", "npm.cmd", "run", "test:integration"] if os.name == "nt" else ["npm", "run", "test:integration"]
         PHASE = "browser checks"
@@ -92,7 +104,7 @@ def run():
         PHASE = "committed record verification"
         with session_scope(engine) as session:
             row = session.scalar(select(JobApplication).where(JobApplication.company == marker + " created"))
-            if row is None or row.role != "Browser Engineer" or row.applied_on.isoformat() != "2100-01-01":
+            if row is None or row.owner_id != owner_id or row.role != "Browser Engineer" or row.applied_on.isoformat() != "2100-01-01":
                 raise RuntimeError("Committed browser record was not verified in PostgreSQL.")
         print("PASS: committed browser-created values independently verified in test PostgreSQL.")
     finally:
@@ -109,6 +121,10 @@ def run():
                 verify_target(engine)  # Recheck before any cleanup.
                 with session_scope(engine) as session:
                     session.execute(delete(JobApplication).where(JobApplication.company.startswith(marker)))
+                    ids = select(User.id).where(User.email.in_([email_a, email_b]))
+                    session.execute(delete(JobApplication).where(JobApplication.owner_id.in_(ids)))
+                    session.execute(delete(AuthSession).where(AuthSession.user_id.in_(ids)))
+                    session.execute(delete(User).where(User.email.in_([email_a, email_b])))
                 with session_scope(engine) as session:
                     remaining = session.scalar(select(func.count()).select_from(JobApplication).where(JobApplication.company.startswith(marker)))
                     if remaining != 0:

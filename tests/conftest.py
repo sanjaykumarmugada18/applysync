@@ -20,7 +20,7 @@ def test_engine(request):
         with engine.connect() as connection:
             assert connection.scalar(text("SELECT current_database()")) == "applysync_test"
             assert connection.scalar(text("SELECT current_user")) == "applysync_test"
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
         yield engine
     except (ConfigurationError, SQLAlchemyError):
         pytest.fail("Dedicated test database is not configured, reachable, or migrated.", pytrace=False)

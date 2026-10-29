@@ -3,7 +3,7 @@ import type { Application, CreateValues } from './data'
 export interface ApplicationPage { items: Application[]; limit: number; offset: number }
 export type FieldErrors = Partial<Record<keyof CreateValues, string>>
 export class ApiError extends Error {
-  constructor(public kind: 'configuration' | 'network' | 'server' | 'validation' | 'missing' | 'response', public fields: FieldErrors = {}) {
+  constructor(public kind: 'configuration' | 'network' | 'server' | 'validation' | 'missing' | 'response' | 'unauthorized' | 'forbidden' | 'conflict' | 'limited', public fields: FieldErrors = {}) {
     super(kind)
   }
 }
@@ -22,6 +22,10 @@ export function errorMessage(error: unknown, writing = false) {
   if (kind === 'configuration') return 'Set VITE_API_BASE_URL to the local backend origin, then restart Vite.'
   if (kind === 'validation') return 'Check the highlighted fields and try again.'
   if (kind === 'missing') return 'Application not found.'
+  if (kind === 'unauthorized') return 'Your session ended. Sign in and explicitly submit again.'
+  if (kind === 'forbidden') return 'Request protection failed. Open the frontend and API using the same hostname.'
+  if (kind === 'conflict') return 'Registration could not be completed for this email. Try signing in.'
+  if (kind === 'limited') return 'Too many attempts. Wait 15 minutes before trying again.'
   if (writing) return 'Creation could not be confirmed. It may have been saved. Check the application list before submitting again.'
   if (kind === 'server') return 'The server could not load applications. Try again.'
   if (kind === 'response') return 'The server returned an unexpected response. Try again.'
@@ -41,18 +45,25 @@ function validationFields(body: unknown): FieldErrors {
   return fields
 }
 
-async function request(path: string, body?: CreateValues, signal?: AbortSignal): Promise<unknown> {
+export async function request(path: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
   const base = apiBase()
   const timeout = AbortSignal.timeout(15_000)
   let response: Response
   try {
     response = await fetch(`${base}${path}`, {
-      method: body ? 'POST' : 'GET', credentials: 'omit',
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      method: body ? 'POST' : 'GET', credentials: 'include',
+      headers: body ? { 'Content-Type': 'application/json', 'X-ApplySync-CSRF': '1' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
   } catch { throw new ApiError('network') }
+  if (response.status === 401) {
+    if (path.startsWith('/applications') && !signal?.aborted) window.dispatchEvent(new Event('applysync:expired'))
+    throw new ApiError('unauthorized')
+  }
+  if (response.status === 403) throw new ApiError('forbidden')
+  if (response.status === 409) throw new ApiError('conflict')
+  if (response.status === 429) throw new ApiError('limited')
   if (response.status === 404) throw new ApiError('missing')
   if (response.status === 422) {
     let details: unknown
@@ -60,6 +71,7 @@ async function request(path: string, body?: CreateValues, signal?: AbortSignal):
     throw new ApiError('validation', validationFields(details))
   }
   if (!response.ok) throw new ApiError('server')
+  if (response.status === 204) return undefined
   try { return await response.json() } catch { throw new ApiError('response') }
 }
 
@@ -76,4 +88,4 @@ export async function listApplications(limit: number, offset: number, signal?: A
   return { items: page.items.map(application), limit, offset }
 }
 export async function getApplication(id: string, signal?: AbortSignal) { return application(await request(`/applications/${encodeURIComponent(id)}`, undefined, signal)) }
-export async function createApplication(values: CreateValues) { return application(await request('/applications', values)) }
+export async function createApplication(values: CreateValues, signal?: AbortSignal) { return application(await request('/applications', values, signal)) }

@@ -8,6 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from applications import router
 from config import ConfigurationError
+from auth import router as auth_router, AttemptLimiter
+from auth_config import allowed_origins
+from fastapi.exceptions import RequestValidationError
 
 
 @asynccontextmanager
@@ -33,21 +36,43 @@ def create_app(database_target: str = "dev") -> FastAPI:
     if database_target not in {"dev", "test"}:
         raise ConfigurationError("Database target must be dev or test.")
     application = FastAPI(lifespan=lifespan)
+    origins = allowed_origins()
+
+    @application.middleware("http")
+    async def request_security(request: Request, call_next):
+        # Independent server checks: simple forms, absent/foreign origins, and
+        # missing custom headers are rejected even without a CORS preflight.
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            if (request.headers.get("origin") not in origins
+                    or request.headers.get("x-applysync-csrf") != "1"):
+                return JSONResponse(status_code=403, content={"detail": "Request protection failed"})
+        response = await call_next(request)
+        if request.url.path.startswith(("/auth", "/applications")):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @application.exception_handler(RequestValidationError)
+    async def safe_validation(request, error):
+        # FastAPI's default input echo can include submitted passwords.
+        return JSONResponse(status_code=422, content={"detail": [
+            {"loc": list(item["loc"]), "type": item["type"], "msg": "Invalid input"}
+            for item in error.errors()]})
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[f"http://{host}:{port}" for host in ("localhost", "127.0.0.1")
-                       for port in (5173, 4173)],
-        allow_credentials=False,
+        allow_origins=list(origins),
+        allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "X-ApplySync-CSRF"],
     )
     application.state.database_target = database_target
     application.state.engine = None
     application.state.engine_lock = Lock()
+    application.state.attempt_limiter = AttemptLimiter()
     application.add_exception_handler(SQLAlchemyError, database_error)
     application.add_exception_handler(ConfigurationError, database_error)
     application.add_api_route("/health", health, methods=["GET"])
     application.include_router(router)
+    application.include_router(auth_router)
     return application
 
 

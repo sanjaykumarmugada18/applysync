@@ -10,15 +10,16 @@ from sqlalchemy.engine import Engine
 from database import get_engine, session_scope
 from models import JobApplication
 from schemas import ApplicationCreate, ApplicationPage, ApplicationRead
+from auth import CurrentUser
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 DatabaseEngine = Annotated[Engine, Depends(get_engine)]
 
 
 @router.post("", response_model=ApplicationRead, status_code=201)
-def create_application(payload: ApplicationCreate, engine: DatabaseEngine):
+def create_application(payload: ApplicationCreate, engine: DatabaseEngine, user: CurrentUser):
     with session_scope(engine) as session:
-        application = JobApplication(**payload.model_dump())
+        application = JobApplication(**payload.model_dump(), owner_id=user.id)
         session.add(application)
         session.flush()
         # Materialize while attached; no lazy loads after commit/close.
@@ -30,11 +31,12 @@ def create_application(payload: ApplicationCreate, engine: DatabaseEngine):
 @router.get("", response_model=ApplicationPage)
 def list_applications(
     engine: DatabaseEngine,
+    user: CurrentUser,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
 ):
     with session_scope(engine) as session:
-        rows = session.scalars(select(JobApplication).order_by(
+        rows = session.scalars(select(JobApplication).where(JobApplication.owner_id == user.id).order_by(
             JobApplication.created_at.asc(), JobApplication.id.asc()
         ).limit(limit).offset(offset))
         response = ApplicationPage(items=[ApplicationRead.model_validate(row) for row in rows],
@@ -43,9 +45,10 @@ def list_applications(
 
 
 @router.get("/{application_id}", response_model=ApplicationRead)
-def get_application(application_id: UUID, engine: DatabaseEngine):
+def get_application(application_id: UUID, engine: DatabaseEngine, user: CurrentUser):
     with session_scope(engine) as session:
-        application = session.get(JobApplication, application_id)
+        application = session.scalar(select(JobApplication).where(
+            JobApplication.id == application_id, JobApplication.owner_id == user.id))
         if application is None:
             raise HTTPException(status_code=404, detail="Application not found")
         response = ApplicationRead.model_validate(application)

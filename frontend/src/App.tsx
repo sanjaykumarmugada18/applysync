@@ -6,12 +6,17 @@ import { PreviewApplications } from './PreviewApplications'
 import { StoredApplications } from './StoredApplications'
 import { makeQueryClient } from './query'
 import type { PreviewApplication } from './data'
+import { AuthForm, AuthProvider, ProtectedApplications } from './Auth'
 
 export function App({ initialRecords }: { initialRecords?: PreviewApplication[] }) {
   const [client] = useState(makeQueryClient)
-  return <QueryClientProvider client={client}><Shell><Routes>
-    <Route path="/applications/:id?" element={<StoredApplications />} />
-    <Route path="/preview/applications/:id?" element={<PreviewApplications initialRecords={initialRecords} />} />
-    <Route path="*" element={<Navigate to="/applications" replace />} />
-  </Routes></Shell></QueryClientProvider>
+  return <Routes>
+    <Route path="/preview/applications/:id?" element={<QueryClientProvider client={client}><Shell><PreviewApplications initialRecords={initialRecords} /></Shell></QueryClientProvider>} />
+    <Route path="*" element={<AuthProvider><Shell><Routes>
+      <Route path="/login" element={<AuthForm />} />
+      <Route path="/register" element={<AuthForm register />} />
+      <Route path="/applications/:id?" element={<ProtectedApplications><StoredApplications /></ProtectedApplications>} />
+      <Route path="*" element={<Navigate to="/applications" replace />} />
+    </Routes></Shell></AuthProvider>} />
+  </Routes>
 }

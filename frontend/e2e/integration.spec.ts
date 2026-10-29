@@ -3,10 +3,10 @@ import { mkdirSync } from 'node:fs'
 
 const api = process.env.APPLYSYNC_E2E_API_ORIGIN!
 const marker = process.env.APPLYSYNC_E2E_RUN_ID!
-const screenshots = '../docs/screenshots/Build2_Task2'
+const screenshots = '../docs/screenshots/Build3'
 mkdirSync(screenshots, { recursive: true })
 
-test('real browser CORS, PostgreSQL creation, query refresh, pagination and reload', async ({ page }) => {
+test('real two-account sessions, ownership, creation, reload and logout', async ({ page, browser }) => {
   let listReads = 0
   let posts = 0
   const errors: string[] = []
@@ -16,6 +16,11 @@ test('real browser CORS, PostgreSQL creation, query refresh, pagination and relo
     if (request.url() === api + '/applications' && request.method() === 'POST') posts++
   })
   await page.goto('/applications')
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+  await page.screenshot({ path: `${screenshots}/login.png`, fullPage: true })
+  await page.getByLabel('Email', { exact: true }).fill(process.env.APPLYSYNC_E2E_EMAIL_A!)
+  await page.getByLabel('Password', { exact: true }).fill(process.env.APPLYSYNC_E2E_PASSWORD!)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Application list' }).getByRole('listitem')).toHaveCount(20)
   await expect(page.getByLabel('Sample stage')).toHaveCount(0)
   await expect(page.locator('.stage-label')).toHaveCount(0)
@@ -52,12 +57,40 @@ test('real browser CORS, PostgreSQL creation, query refresh, pagination and relo
   expect((await reread).status()).toBe(200)
   await expect(page.getByRole('dialog')).toContainText(marker + ' created')
   await expect(page.getByRole('dialog')).toContainText('1 Jan 2100')
+  // A separate browser session registers B against the actual API.
+  const contextB = await browser.newContext()
+  const pageB = await contextB.newPage()
+  await pageB.goto('http://127.0.0.1:4173/register')
+  await pageB.getByLabel('Email', { exact: true }).fill(process.env.APPLYSYNC_E2E_EMAIL_B!)
+  await pageB.getByLabel('Password', { exact: true }).fill(process.env.APPLYSYNC_E2E_PASSWORD!)
+  await pageB.getByRole('button', { name: 'Create account' }).click()
+  await expect(pageB.getByText('No stored applications yet')).toBeVisible()
+  await pageB.goto(`http://127.0.0.1:4173/applications/${record.id}`)
+  await expect(pageB.getByRole('dialog')).toContainText('Application not found.')
+  await pageB.reload()
+  await expect(pageB.getByRole('dialog')).toContainText('Application not found.')
+  await contextB.close()
   await page.screenshot({ path: `${screenshots}/stored-detail.png`, animations: 'disabled' })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: `${screenshots}/stored-mobile-detail.png`, animations: 'disabled' })
   await page.keyboard.press('Escape')
   await page.screenshot({ path: `${screenshots}/stored-mobile-list.png`, fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Board', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Stage not recorded' })).toBeVisible()
+  await page.screenshot({ path: `${screenshots}/stored-mobile-board.png`, fullPage: true })
+  await page.getByRole('button', { name: 'Log out', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
+  // Same browser changes to B: the old account's cache must not reappear.
+  await page.getByLabel('Email', { exact: true }).fill(process.env.APPLYSYNC_E2E_EMAIL_B!)
+  await page.getByLabel('Password', { exact: true }).fill(process.env.APPLYSYNC_E2E_PASSWORD!)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByText('No stored applications yet')).toBeVisible()
+  await expect(page.getByText(marker + ' created', { exact: true })).toHaveCount(0)
+  await page.goto(`/applications/${record.id}`)
+  await expect(page.getByRole('dialog')).toContainText('Application not found.')
 
   await page.goto('/applications/00000000-0000-4000-8000-000000000000')
   await expect(page.getByRole('dialog')).toContainText('Application not found.')

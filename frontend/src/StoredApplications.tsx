@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, Columns3, List, Plus, Search } from 'lucide-react'
@@ -16,6 +16,8 @@ export function StoredApplications() {
   const location = useLocation()
   const client = useQueryClient()
   const [saved, setSaved] = useState(false)
+  const writes = useRef<AbortController | null>(null)
+  useEffect(() => () => writes.current?.abort(), [])
   const rawOffset = params.get('offset') ?? '0'
   const offset = Number(rawOffset)
   const validOffset = /^\d+$/.test(rawOffset) && Number.isSafeInteger(offset) && offset <= 10_000
@@ -27,7 +29,10 @@ export function StoredApplications() {
     queryFn: ({ signal }) => listApplications(pageSize, offset, signal), enabled: validOffset })
   const detail = useQuery({ queryKey: ['applications', 'detail', id],
     queryFn: ({ signal }) => getApplication(id!, signal), enabled: validId })
-  const mutation = useMutation({ mutationFn: createApplication, retry: false })
+  const mutation = useMutation({ mutationFn: (values: CreateValues) => {
+    writes.current = new AbortController()
+    return createApplication(values, writes.current.signal)
+  }, retry: false })
   const close = () => { if (!mutation.isPending) navigate(`/applications${location.search}`, { replace: true }) }
   const rows = list.data?.items ?? []
   const query = search.trim().toLocaleLowerCase()
@@ -37,9 +42,11 @@ export function StoredApplications() {
   }
   async function add(values: CreateValues) {
     const record = await mutation.mutateAsync(values)
+    if (writes.current?.signal.aborted) return
     client.setQueryData(['applications', 'detail', record.id], record)
     // Creation is already committed. A failed refresh is a read error, not a failed POST.
     await client.invalidateQueries({ queryKey: ['applications', 'list'] })
+    if (writes.current?.signal.aborted) return
     setSaved(true)
     navigate(`/applications/${record.id}${location.search}`, { replace: true })
   }

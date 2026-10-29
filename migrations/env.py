@@ -12,6 +12,12 @@ target_metadata = Base.metadata
 
 
 def run_migrations():
+    supplied = context.config.attributes.get("connection")
+    if supplied is not None:
+        context.configure(connection=supplied, target_metadata=target_metadata, compare_type=True)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     target = context.get_x_argument(as_dictionary=True).get("target", "dev")
     try:
         settings = load_settings(target)

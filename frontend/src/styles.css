@@ -220,3 +220,11 @@ input::placeholder { color: #667085; }
   .stored-list .list-row { grid-template-columns: minmax(0, 1fr); }
   .pagination span { order: 3; width: 100%; text-align: center; }
 }
+/* Build 3 identity uses the existing surfaces, fields and purple buttons. */
+.auth-card { max-width: 480px; margin: 40px auto; padding: 32px; }
+.auth-card h1 { font-size: 28px; margin: 12px 0; }
+.auth-card > p { margin-bottom: 20px; }
+.auth-card a { color: var(--purple, #7254c7); }
+.signed-in { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.signed-in span { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+@media (max-width: 700px) { .topbar { flex-wrap: wrap; height: auto; min-height: 72px; gap: 10px; padding-block: 12px; } .signed-in { margin-left: auto; } .signed-in span { max-width: 160px; } .auth-card { margin: 20px auto; padding: 22px; } }

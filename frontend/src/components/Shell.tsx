@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router'
 import { ArrowUpRight, Layers3, Menu, ShieldCheck } from 'lucide-react'
 import { Modal, PreviewNotice } from './ui'
+import { useAuth } from '../Auth'
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const preview = useLocation().pathname.startsWith('/preview/')
@@ -12,10 +13,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <nav aria-label="Main navigation"><Link className="nav-link" aria-current="page" to={preview ? "/preview/applications" : "/applications"} onClick={onNavigate}><Layers3 size={19} /> Applications <ArrowUpRight size={16} className="ml-auto" /></Link></nav>
       <div className="sidebar-note"><span className="tiny-tag">{preview ? 'BUILD 2 · PREVIEW' : 'BUILD 2 · LOCAL DEVELOPMENT'}</span><h2>A little more clarity.</h2><p>One place to see your next opportunity taking shape.</p></div>
     </div>
-    <div className="sidebar-footer"><ShieldCheck size={20} /><div><strong>Private by design</strong><p>{preview ? "Fictional data. All local." : "Local, unauthenticated use."}</p></div></div>
+    <div className="sidebar-footer"><ShieldCheck size={20} /><div><strong>Private by design</strong><p>{preview ? "Fictional data. All local." : "Your account. Your applications."}</p></div></div>
   </div>
 }
 export function Shell({ children }: { children: ReactNode }) {
+  const auth = useAuth()
   const preview = useLocation().pathname.startsWith('/preview/')
   const [navigationOpen, setNavigationOpen] = useState(false)
   return <div className="app-shell">
@@ -26,6 +28,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setNavigationOpen(true)}><Menu size={21} /></button>
         <div className="breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>Applications</strong></div>
         <PreviewNotice>{preview ? 'Design preview · Sample data' : 'Local development · Stored data'}</PreviewNotice>
+        {auth?.user && !auth.checking && !auth.failure && <div className="signed-in"><span>{auth.user.email}</span><button className="button" onClick={() => void auth.logout()}>Log out</button></div>}
       </header>
       <main id="main-content" tabIndex={-1}>{children}</main>
     </div>

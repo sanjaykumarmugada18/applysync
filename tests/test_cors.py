@@ -23,10 +23,11 @@ def test_local_origin_preflight_and_errors(host, port, monkeypatch):
                                      base_url="http://test") as client:
             response = await client.options("/applications", headers={
                 "Origin": origin, "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "content-type"})
+                "Access-Control-Request-Headers": "content-type,x-applysync-csrf"})
             assert response.status_code == 200
             assert response.headers["access-control-allow-origin"] == origin
-            assert "access-control-allow-credentials" not in response.headers
+            assert response.headers["access-control-allow-credentials"] == "true"
+            assert "x-applysync-csrf" in response.headers["access-control-allow-headers"].lower()
             health = await client.get("/health", headers={"Origin": origin})
             assert health.json() == {"status": "healthy"}
             failed = await client.get("/applications", headers={"Origin": origin})
